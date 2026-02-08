@@ -1,33 +1,177 @@
-import telebot
-from telebot import types
-import json
-
-TOKEN = "8038890774:AAFRg97wH8psYM7XxUpltSMGItwmq2riq9Y"
-WEB_APP_URL = "https://229-design.github.io/bot-2/" 
-MODERATION_GROUP_ID = -1003774378236 
-
-bot = telebot.TeleBot(TOKEN, threaded=False)
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn = types.KeyboardButton("🛍 Ouvrir Neo Boutique", web_app=types.WebAppInfo(WEB_APP_URL))
-    markup.add(btn)
-    bot.send_message(message.chat.id, "🌌 <b>BIENVENUE DANS LE FUTUR</b>\n\nLancez l'app pour voir nos produits exclusifs.", parse_mode="HTML", reply_markup=markup)
-
-@bot.message_handler(content_types=['web_app_data'])
-def handle_data(message):
-    try:
-        data = json.loads(message.web_app_data.data)
-        username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
-        summary = "".join([f"• {i['name']} ({i['size']}) x{i['qty']}\n" for i in data])
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root { 
+            --neon-blue: #00f3ff; 
+            --neon-purple: #bc13fe;
+            --glass: rgba(255, 255, 255, 0.07);
+            --bg: #050505;
+        }
+        body { 
+            background-color: var(--bg); color: white; font-family: 'Inter', sans-serif;
+            margin: 0; padding: 15px; overflow-x: hidden; padding-bottom: 100px;
+        }
+        .header { text-align: center; margin-bottom: 20px; color: var(--neon-blue); text-transform: uppercase; letter-spacing: 2px; }
         
-        bot.send_message(message.chat.id, f"✅ <b>Commande enregistrée !</b>\n\n{summary}")
-        bot.send_message(MODERATION_GROUP_ID, f"🚨 <b>NEW ORDER</b>\n👤 Client: {username}\n{summary}")
-    except Exception as e:
-        print(f"Error: {e}")
+        /* Glassmorphism Cards */
+        .glass-card {
+            background: var(--glass);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px; padding: 15px; margin-bottom: 15px;
+        }
 
-if __name__ == "__main__":
-    bot.remove_webhook()
-    print("🚀 Neo App Online")
-    bot.infinity_polling()
+        /* Navigation Pages */
+        .page { display: none; }
+        .active { display: block; }
+
+        /* Home Category Grid */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .cat-card { 
+            height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border: 1px solid rgba(0, 243, 255, 0.3); cursor: pointer;
+        }
+        .cat-card span { font-size: 24px; margin-bottom: 10px; }
+
+        /* Product Detail View */
+        .product-img { width: 100%; aspect-ratio: 1/1; border-radius: 15px; background: #111; margin-bottom: 15px; object-fit: cover; }
+        .price-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        
+        /* Controls */
+        .controls { display: flex; align-items: center; gap: 12px; }
+        .btn-neon { 
+            background: none; border: 1px solid var(--neon-blue); color: var(--neon-blue);
+            width: 32px; height: 32px; border-radius: 8px; font-weight: bold; cursor: pointer;
+        }
+        .btn-neon:active { background: var(--neon-blue); color: black; }
+        .back-btn { color: var(--neon-purple); background: none; border: none; padding: 10px 0; cursor: pointer; }
+
+        /* Footer Cart Bar */
+        .footer {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple));
+            color: white; text-align: center; padding: 18px; font-weight: bold; font-size: 16px;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.5); z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="home-page" class="page active">
+        <div class="header">💎 LUXE DIGITAL 💎</div>
+        <div class="grid">
+            <div class="glass-card cat-card" onclick="showCategory('NEIGE')"><span>❄️</span>NEIGE</div>
+            <div class="glass-card cat-card" onclick="showCategory('BEUH')"><span>☘️</span>BEUH</div>
+            <div class="glass-card cat-card" style="grid-column: span 2;" onclick="showCategory('SHIT')"><span>🍫</span>SHIT / RESINES</div>
+        </div>
+    </div>
+
+    <div id="list-page" class="page">
+        <button class="back-btn" onclick="showPage('home-page')">⬅ Retour au menu</button>
+        <h2 id="list-title" class="header"></h2>
+        <div id="item-container"></div>
+    </div>
+
+    <div id="detail-page" class="page">
+        <button class="back-btn" id="detail-back">⬅ Retour à la liste</button>
+        <div id="detail-content"></div>
+    </div>
+
+    <div class="footer" onclick="sendOrder()" id="cart-bar">PANIER VIDE</div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const catalog = {
+            'NEIGE': [
+                { name: '❄️ QUALITÉ LÉGENDAIRE', desc: 'Le top du marché. Pureté garantie.', img: 'https://placehold.co/400x400/111/00f3ff?text=NEIGE', prices: {'1.5g': 50, '5g': 150, '10g': 280, '50g': 1200, '100g': 2200} }
+            ],
+            'BEUH': [
+                { name: '☘️ VERTE HOLLANDAISE', desc: 'Classique rare, arôme puissant.', img: 'https://placehold.co/400x400/111/bc13fe?text=BEUH', prices: {'10g': 70, '25g': 150, '50g': 250} }
+            ],
+            'SHIT': [
+                { name: '🟡 JAUNE MIMOSA CAKE', desc: 'Bubble Shooter Légende.', img: 'https://placehold.co/400x400/111/00f3ff?text=MIMOSA', prices: {'10g': 50, '25g': 90, '50g': 130, '100g': 240} },
+                { name: '❄️ FROZEN 90U', desc: 'Nord Africain premium.', img: 'https://placehold.co/400x400/111/bc13fe?text=90U', prices: {'5g': 50, '10g': 90, '25g': 160, '50g': 300, '100g': 550} },
+                { name: '❄️ FROZEN 160U', desc: 'Le must du Nord Africain.', img: 'https://placehold.co/400x400/111/00f3ff?text=160U', prices: {'5g': 70, '10g': 130, '25g': 230, '50g': 420, '100g': 800} }
+            ]
+        };
+
+        let cart = {};
+
+        function showPage(id) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        function showCategory(cat) {
+            document.getElementById('list-title').innerText = cat;
+            const container = document.getElementById('item-container');
+            container.innerHTML = catalog[cat].map(p => `
+                <div class="glass-card" onclick="showDetail('${cat}', '${p.name}')">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>${p.name}</span>
+                        <span style="color:var(--neon-purple)">Détails ➔</span>
+                    </div>
+                </div>
+            `).join('');
+            showPage('list-page');
+        }
+
+        function showDetail(cat, prodName) {
+            const prod = catalog[cat].find(p => p.name === prodName);
+            document.getElementById('detail-back').onclick = () => showCategory(cat);
+            const content = document.getElementById('detail-content');
+            content.innerHTML = `
+                <img src="${prod.img}" class="product-img">
+                <h2>${prod.name}</h2>
+                <p style="color:#888; margin-bottom:20px;">${prod.desc}</p>
+                <div class="glass-card">
+                    ${Object.keys(prod.prices).map(size => {
+                        let key = `${prod.name}_${size}`;
+                        let qty = cart[key] ? cart[key].qty : 0;
+                        return `
+                            <div class="price-row">
+                                <span>${size} — <b>${prod.prices[size]}€</b></span>
+                                <div class="controls">
+                                    <button class="btn-neon" onclick="updateCart('${prod.name}', '${size}', ${prod.prices[size]}, -1, '${cat}')">-</button>
+                                    <span style="font-weight:bold">${qty}</span>
+                                    <button class="btn-neon" onclick="updateCart('${prod.name}', '${size}', ${prod.prices[size]}, 1, '${cat}')">+</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            showPage('detail-page');
+        }
+
+        function updateCart(name, size, price, change, cat) {
+            let key = `${name}_${size}`;
+            if (!cart[key]) cart[key] = { name, size, price, qty: 0 };
+            cart[key].qty += change;
+            if (cart[key].qty <= 0) delete cart[key];
+            
+            tg.HapticFeedback.impactOccurred('light');
+            showDetail(cat, name);
+            updateCartBar();
+        }
+
+        function updateCartBar() {
+            const count = Object.values(cart).reduce((s, i) => s + i.qty, 0);
+            document.getElementById('cart-bar').innerText = count > 0 ? `VALIDER LA COMMANDE (${count})` : "PANIER VIDE";
+        }
+
+        function sendOrder() {
+            if (Object.keys(cart).length === 0) return alert("Panier vide !");
+            tg.sendData(JSON.stringify(Object.values(cart)));
+            tg.close();
+        }
+    </script>
+</body>
+</html>
